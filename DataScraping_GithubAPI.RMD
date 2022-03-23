@@ -1,0 +1,233 @@
+---
+title: "GitHub Data Scraping and Visualization"
+author: "Nidhi Chandramohan"
+date: "11/2/2021"
+output: html_document
+---
+
+## GitHub User : Max Goodridge 
+
+Max Goodridge is a Software engineer. These repositories are based on his tutorials posted in youtube
+
+Github Repo : Max Goodridge has 38 repositories and 1.2k+ followers
+
+Github link : https://github.com/maxg203
+
+## R setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,message = FALSE, warning = FALSE, cache = TRUE)
+```
+```{r setup2}
+# Install if first time
+#install.packages("gh")
+library(gh)
+library(httr)
+library(tidyverse)
+library(kableExtra)
+library(ggthemes)
+
+# Token from Github
+my_token = "<your token here>"
+Sys.setenv(GITHUB_TOKEN = my_token)
+
+```
+
+## TASK 1
+
+A table showing the user's login, name, public_repos, followers
+
+```{r task1}
+
+gh_max_profile <- gh("GET /users/maxg203", 
+                     username = "maxg203",.limit=Inf)
+
+library(tidyverse)
+gh_max_profile <- tibble(
+  login = gh_max_profile$login,
+  name = gh_max_profile$name,
+  public_repos = gh_max_profile$public_repos,
+  followers = gh_max_profile$followers
+)
+```
+
+```{r viewtable1}
+head(gh_max_profile, n = 50) %>% 
+  kable() %>% 
+  kable_styling(bootstrap_options = c("bordered","striped","hover","condensed","responsive"))
+```
+
+## TASK 2
+
+A table summarizing the followers' login, name, public_repos, followers
+
+```{r task2}
+
+# fetch follower list
+gh_max_followers <- gh("/users/maxg203/followers", .limit = Inf)
+
+# Create a dataframe 
+df_followers <- data.frame(User=character(),
+                           login=character(), 
+                           public_repos=integer(), 
+                           followers=integer()) 
+
+# create functions to handle null values
+null_list <- function(x){
+  map_chr(x, ~{ifelse(is.null(.x), NA, .x)})
+}
+
+is.not.null <- function(x) !is.null(x)
+n <- length(gh_max_followers)
+
+# Fro loop for going to url of each follower and take further info
+
+for (i in 1:n)
+{
+  # Take login of one follower to fetch further data 
+  login = gh_max_followers[[i]]$login
+  
+  # fetch that follower's profile
+  f_profile <- gh("GET /users/:login", login = login, .limit = Inf)
+  
+  # Take rest of data
+  name = f_profile$name
+  public_repos =f_profile$public_repos
+  followers = f_profile$followers
+  
+  # Check for null and if not then populate data frame
+if (is.not.null(name) & is.not.null(login) & is.not.null(public_repos) 
+      & is.not.null(followers))
+  {
+        df_followers <- rbind(df_followers, data.frame(User=null_list(name),
+        login = (login),
+	public_repos=null_list(public_repos),
+        followers = null_list(followers)))
+  }
+}
+
+```
+
+```{r viewtable2}
+head(df_followers, n = 10) %>% 
+  kable() %>% 
+  kable_styling(bootstrap_options = c("bordered","striped","hover","condensed","responsive"))
+```
+
+## TASK 3
+
+A table summarizing the repositories' name, size, forks_count,
+open_issues_count, closed_issue_count
+
+Note : For the purpose of visualization, I have added "created_year" column as well 
+
+```{r task3}
+# get repo info 
+gh_max_repos <- gh("GET /users/maxg203/repos", username = "maxg203",.limit = Inf)
+length(gh_max_repos)
+
+
+library(tidyverse)
+
+# create data frame
+df_max_repo_info <- data.frame(Repo_Name=character(),
+                           size=integer(), 
+                           forks=integer(), 
+                           open_issues_count=integer(),
+                           closed_issues_count=integer()) 
+
+# Fetch data for each repo
+
+for (i in 1:length(gh_max_repos))
+{ 
+  
+# Find all required columns 
+name = gh_max_repos[[i]]$name
+size = gh_max_repos[[i]]$size
+created_year = as.integer(substring(gh_max_repos[[i]]$created_at,1,4))
+forks = gh_max_repos[[i]]$forks_count
+open_issues_count = gh_max_repos[[i]]$open_issues_count
+    
+closed_issues_url <-
+  paste0(gh_max_repos[[i]]$url,"/issues?state=closed")
+    
+closed_issues = gh(closed_issues_url,username = "maxg203",.limit = Inf)
+closed_issues_count = length(closed_issues)
+    
+# Populate data to data frame
+if (is.not.null(name) & is.not.null(size) & is.not.null(forks)
+    & is.not.null(created_year)
+        & is.not.null(open_issues_count) & is.not.null(closed_issues_count))
+{
+df_max_repo_info<-rbind(df_max_repo_info, data.frame(Repo_Name = null_list(name),
+size = null_list(size),
+forks = null_list(forks),
+created_year = null_list(created_year),
+open_issues_count = null_list(open_issues_count),
+closed_issues_count = null_list(closed_issues_count)))
+}
+    
+}
+
+```
+
+```{r display2}
+head(df_max_repo_info, n = 15) %>% kable() %>%
+  kable_styling(bootstrap_options = c("bordered","striped","hover","condensed","responsive")) %>% scroll_box(width="100%",height="300px")
+```
+
+## Visualizations - Plot 1
+
+User's top repositories based on number of forks
+
+```{r plot1}
+
+# Create summary table ( By year )
+DF_top_repos <- df_max_repo_info %>% 
+  arrange(desc(forks))
+
+df <- head(DF_top_repos)
+
+# create the plot using ggplot 
+ggplot(df, 
+	aes(x = Repo_Name, y = forks)) +
+	geom_bar(stat = "identity", position = "dodge") + 
+	theme_economist() +
+	scale_color_gdocs() +
+	theme(axis.text.x=element_text(angle = 30, vjust = 0.5)) +
+	theme(plot.title = element_text(hjust = 0.5), legend.position = "bottom") +
+	ggtitle("Popular Repos ") +
+	xlab("Repo Name") +
+	ylab ("Number of Forks") 
+
+```
+
+## Visualizations - Plot 2
+
+Repo Counts per year
+( See how active user is through out)
+
+```{r plot2}
+
+df_repo_summary <- df_max_repo_info %>% group_by(created_year) %>% 
+  summarise(Repo_Count = n())
+
+
+
+# create the plot using ggplot 
+ggplot(df_repo_summary, 
+	aes(x = created_year, y = Repo_Count)) +
+	geom_bar(stat = "identity", position = "dodge") + 
+	theme_economist() +
+	scale_color_gdocs() +
+	theme(axis.text.x=element_text(angle = 30, vjust = 0.5)) +
+	theme(plot.title = element_text(hjust = 0.5), legend.position = "bottom") +
+	ggtitle("Repo count by year") +
+	xlab("Year") +
+	ylab ("Number of Repos") 
+
+```
+```
+
+
+
